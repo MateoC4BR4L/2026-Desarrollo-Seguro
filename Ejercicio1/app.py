@@ -20,16 +20,29 @@ def close_db(exception):
         db.close()
 
 
+# --- MITIGACIÓN SQLi ---
+# Whitelist de columnas y direcciones permitidas para ORDER BY
+SORT_BY_ALLOWED  = {'nombre': 'peliculas.nombre', 'fecha': 'funciones.fecha_hora'}
+SORT_DIR_ALLOWED = {'ASC', 'DESC'}
+
+
 def buscar_funciones(query, sort_by='nombre', sort_dir='ASC'):
     db = get_db()
-    sql = f"SELECT peliculas.nombre as pelicula, funciones.fecha_hora, " \
-          f"(funciones.asientos_totales - funciones.asientos_ocupados) as disponibles " \
-          f"FROM funciones " \
-          f"JOIN peliculas ON funciones.pelicula_id = peliculas.id " \
-          f"WHERE peliculas.nombre LIKE '%{query}%' " \
-          f"ORDER BY {'peliculas.nombre' if sort_by == 'nombre' else 'funciones.fecha_hora'} " \
-          f"{sort_dir}"
-    return db.execute(sql).fetchall()
+
+    # Whitelist para sort_by y sort_dir: evita inyección en ORDER BY
+    col       = SORT_BY_ALLOWED.get(sort_by, 'peliculas.nombre')
+    direction = sort_dir if sort_dir in SORT_DIR_ALLOWED else 'ASC'
+
+    # Consulta parametrizada: el valor de query nunca forma parte del SQL
+    sql = (
+        f"SELECT peliculas.nombre as pelicula, funciones.fecha_hora, "
+        f"(funciones.asientos_totales - funciones.asientos_ocupados) as disponibles "
+        f"FROM funciones "
+        f"JOIN peliculas ON funciones.pelicula_id = peliculas.id "
+        f"WHERE peliculas.nombre LIKE ? "
+        f"ORDER BY {col} {direction}"
+    )
+    return db.execute(sql, (f'%{query}%',)).fetchall()
 
 
 @app.route('/')
@@ -49,6 +62,7 @@ def index():
 
 if __name__ == '__main__':
     import os
-    host=os.environ.get('FLASK_HOST', '0.0.0.0')
-    debug = os.environ.get('DEBUG_MODE', 'true').lower() in ('true', '1', 'yes')
-    app.run(debug=debug,host=host)
+    host  = os.environ.get('FLASK_HOST', '0.0.0.0')
+    # Mitigación: debug desactivado por defecto (antes era 'true')
+    debug = os.environ.get('DEBUG_MODE', 'false').lower() in ('true', '1', 'yes')
+    app.run(debug=debug, host=host)

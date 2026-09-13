@@ -79,20 +79,63 @@ public class PeliculaController {
         return "upload";
     }
 
+    // --- MITIGACIÓN File Upload (CWE-434) ---
+    // Extensiones permitidas (whitelist). Solo imágenes.
+    private static final java.util.Set<String> ALLOWED_EXTENSIONS =
+        java.util.Set.of(".jpg", ".jpeg", ".png", ".webp", ".gif");
+
     @PostMapping("/upload/{id}")
     public String uploadFile(@PathVariable Integer id,
-                             @RequestParam("afiche") MultipartFile archivo) throws IOException {
+                             @RequestParam("afiche") MultipartFile archivo,
+                             Model model) throws IOException {
+
         Pelicula pelicula = peliculaRepo.findById(id)
             .orElseThrow(() -> new EntityNotFoundException("Pelicula no encontrada"));
 
-        String filename = archivo.getOriginalFilename();
-        Path uploadPath = Paths.get(uploadDir);
+        // 1. Validar que el archivo no está vacío
+        if (archivo.isEmpty()) {
+            model.addAttribute("uploadError", "El archivo está vacío.");
+            model.addAttribute("pelicula", pelicula);
+            return "upload";
+        }
+
+        // 2. Extraer y validar la extensión contra la whitelist
+        String originalName = archivo.getOriginalFilename() != null
+            ? archivo.getOriginalFilename() : "";
+        int dotIdx = originalName.lastIndexOf('.');
+        if (dotIdx < 0) {
+            model.addAttribute("uploadError", "El archivo no tiene extensión.");
+            model.addAttribute("pelicula", pelicula);
+            return "upload";
+        }
+        String ext = originalName.substring(dotIdx).toLowerCase();
+        if (!ALLOWED_EXTENSIONS.contains(ext)) {
+            model.addAttribute("uploadError",
+                "Tipo de archivo no permitido. Solo se aceptan: jpg, jpeg, png, webp, gif.");
+            model.addAttribute("pelicula", pelicula);
+            return "upload";
+        }
+
+        // 3. Generar nombre seguro con UUID — el nombre original del cliente se descarta
+        String safeFilename = java.util.UUID.randomUUID().toString() + ext;
+
+        // 4. Protección contra path traversal: verificar que la ruta resuelta
+        //    permanece dentro del directorio de uploads
+        Path uploadPath = Paths.get(uploadDir).toAbsolutePath().normalize();
         if (!Files.exists(uploadPath)) {
             Files.createDirectories(uploadPath);
         }
-        Files.copy(archivo.getInputStream(), uploadPath.resolve(filename));
+        Path dest = uploadPath.resolve(safeFilename).normalize();
+        if (!dest.startsWith(uploadPath)) {
+            model.addAttribute("uploadError", "Ruta de archivo inválida.");
+            model.addAttribute("pelicula", pelicula);
+            return "upload";
+        }
 
-        pelicula.setAfichePath(filename);
+        // 5. Guardar usando el nombre seguro
+        Files.copy(archivo.getInputStream(), dest);
+
+        pelicula.setAfichePath(safeFilename);
         peliculaRepo.save(pelicula);
 
         return "redirect:/";
@@ -101,18 +144,26 @@ public class PeliculaController {
     @GetMapping("/uploads/{filename:.+}")
     @ResponseBody
     public ResponseEntity<Resource> serveFile(@PathVariable String filename) throws IOException {
-        Path filePath = Paths.get(uploadDir).resolve(filename).normalize();
-        Resource resource = new UrlResource(filePath.toUri());
-        MediaType mediaType = MediaTypeFactory.getMediaType(resource)
-        .orElse(MediaType.APPLICATION_OCTET_STREAM);
+        Path filePath = Paths.get(uploadDir).toAbsolutePath().normalize()
+            .resolve(filename).normalize();
 
+        // Protección adicional: no servir archivos fuera del uploadDir
+        if (!filePath.startsWith(Paths.get(uploadDir).toAbsolutePath().normalize())) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        Resource resource = new UrlResource(filePath.toUri());
         if (!resource.exists()) {
             return ResponseEntity.notFound().build();
         }
 
+        MediaType mediaType = MediaTypeFactory.getMediaType(resource)
+            .orElse(MediaType.APPLICATION_OCTET_STREAM);
+
         return ResponseEntity.ok()
             .contentType(mediaType)
-            .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + resource.getFilename() + "\"")
+            .header(HttpHeaders.CONTENT_DISPOSITION,
+                "inline; filename=\"" + resource.getFilename() + "\"")
             .body(resource);
     }
 

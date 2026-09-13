@@ -1,6 +1,5 @@
 package com.cinebuscador.controller;
 
-import com.cinebuscador.config.EncryptionService;
 import com.cinebuscador.repository.UserRepository;
 import com.cinebuscador.model.User;
 import org.springframework.stereotype.Controller;
@@ -26,18 +25,21 @@ public class AuthController {
         return "index";
     }
 
+    // --- MITIGACIÓN: Usar BCryptPasswordEncoder ---
+    private final org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder encoder = new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder();
+
     // ==================== LOGIN ====================
     @PostMapping("/login")
     public String login(@RequestParam String username, @RequestParam String password, Model model) {
         User user = userRepository.findByUsername(username).orElse(null);
 
         if (user != null) {
-            // Descifrar la contraseña almacenada y comparar con la ingresada
-            String decryptedPassword = EncryptionService.decrypt(user.getPassword());
-            if (password.equals(decryptedPassword)) {
+            // Mitigación: verificar con matches()
+            if (encoder.matches(password, user.getPassword())) {
                 model.addAttribute("loginSuccess", true);
                 model.addAttribute("welcomeUser", username);
-                model.addAttribute("encryptedPassword", user.getPassword());
+                // Mitigación: No exponer el hash en la UI
+                // model.addAttribute("encryptedPassword", user.getPassword());
                 return "index";
             }
         }
@@ -65,12 +67,14 @@ public class AuthController {
 
         com.cinebuscador.model.User nuevoUsuario = new com.cinebuscador.model.User();
         nuevoUsuario.setUsername(username);
-        nuevoUsuario.setPassword(EncryptionService.encrypt(password));
+        // Mitigación: usar encoder.encode()
+        nuevoUsuario.setPassword(encoder.encode(password));
         userRepository.save(nuevoUsuario);
 
         model.addAttribute("registerSuccess", true);
         model.addAttribute("registeredUsername", username);
-        model.addAttribute("encryptedPassword", EncryptionService.encrypt(password));
+        // Mitigación: No exponer el hash en la UI al registrarse
+        // model.addAttribute("encryptedPassword", encoder.encode(password));
         addForms(model);
         return "index";
     }
