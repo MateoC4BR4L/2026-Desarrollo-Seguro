@@ -1,2 +1,8 @@
 __pycache__/
 target/
+.pytest_cache/
+.venv/
+venv/
+*.db
+Ejercicio3/uploads/
+Ejercicio4/uploads/

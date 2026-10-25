@@ -44,6 +44,12 @@
             <artifactId>spring-security-crypto</artifactId>
             <version>6.2.4</version> <!-- Usar versión compatible con spring boot 3.2.x -->
         </dependency>
+        <!-- Pruebas (Practico 4): JUnit 5 + Mockito -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

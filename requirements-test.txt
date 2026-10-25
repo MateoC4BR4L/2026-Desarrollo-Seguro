@@ -1,0 +1,5 @@
+# Dependencias para las pruebas automatizadas (Practico 4)
+# Pruebas unitarias (Ejercicio 1 y 2) y de integracion (Ejercicio 3 y 4)
+flask==3.0.0
+pytest==8.3.3
+requests==2.32.3
